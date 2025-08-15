@@ -1,5 +1,13 @@
 {
-    "require": {
-        "smarty/smarty": "~3.1"
+  "name": "vnstat/dashboard",
+  "type": "project",
+  "license": "GPL-3.0-or-later",
+  "require": {
+    "smarty/smarty": "^4.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "includes/"
     }
+  }
 }
