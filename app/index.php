@@ -18,7 +18,10 @@
  */
 
 // Require includes
-require __DIR__ . '/vendor/autoload.php';
+$autoload = __DIR__ . '/vendor/autoload.php';
+if (file_exists($autoload)) {
+    require $autoload;
+}
 require __DIR__ . '/includes/vnstat.php';
 require __DIR__ . '/includes/utilities.php';
 require __DIR__ . '/includes/config.php';
