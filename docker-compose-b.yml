@@ -1,0 +1,25 @@
+# docker-compose.sidecar.yml
+version: "3.8"
+services:
+  vnstatd:
+    image: vergoh/vnstat
+    container_name: vnstatd
+    restart: unless-stopped
+    network_mode: host          # 让 vnstatd 看到宿主所有网卡
+    volumes:
+      - vnstat-db:/var/lib/vnstat
+
+  dashboard:
+    build: .
+    image: yourrepo/vnstat-dashboard:latest
+    container_name: vnstat-dashboard
+    restart: unless-stopped
+    ports:
+      - "8686:80"
+    environment:
+      - TZ=America/Phoenix
+    volumes:
+      - vnstat-db:/var/lib/vnstat:ro
+
+volumes:
+  vnstat-db:
