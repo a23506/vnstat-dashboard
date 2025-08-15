@@ -1,17 +1,19 @@
-FROM php:7.0-apache
+# Dockerfile
+FROM php:8.2-apache-bookworm
 
-MAINTAINER Alex Marston <alexander.marston@gmail.com>
+# 安装 vnstat（来自 Debian bookworm 仓库）
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends vnstat tzdata ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
 
-# Install Git
-RUN apt-get update && apt-get install -y git unzip
+# 可选：常用 Apache 模块
+RUN a2enmod expires headers rewrite
 
-# Install Composer to handle dependencies
-RUN curl -sS https://getcomposer.org/installer | php && mv composer.phar /usr/local/bin/composer
+# 拷贝应用到 Web 根目录
+COPY app/ /var/www/html/
 
-# Copy application source code to html directory
-COPY ./app/ /var/www/html/
+# 权限
+RUN chown -R www-data:www-data /var/www/html
 
-# Install dependencies
-RUN composer install
-
-RUN mkdir -p /var/lib/vnstat
+# 健康检查（首页能否正常响应）
+HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS http://localhost/ || exit 1
