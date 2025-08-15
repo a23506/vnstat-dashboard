@@ -1,227 +1,222 @@
 <?php
-
-/*
- * Copyright (C) 2019 Alexander Marston (alexander.marston@gmail.com)
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+/**
+ * vnstat-dashboard – PHP 8 兼容版数据层
+ * - 兼容 vnStat 2.x：接口字段可能为 name 而非 id
+ * - 修正 PHP 8 回调：usort 传入显式 callable
+ * - 兜底：空 JSON / 未初始化变量
  */
 
-class vnStat {
-	protected $executablePath;
-	protected $vnstatVersion;
-	protected $vnstatJsonVersion;
-	protected $vnstatData;
+require_once __DIR__ . '/config.php';
 
-	public function __construct ($executablePath) {
-		if (isset($executablePath)) {
-			$this->executablePath = $executablePath;
+class vnStat
+{
+    private string $binPath;
+    private array $vnstatData = [];
+    private array $interfaceIds = [];
 
-			// Execute a command to output a json dump of the vnstat data
-			$vnstatStream = popen("$this->executablePath --json", 'r');
+    public function __construct(string $vnstat_bin_dir = '/usr/bin/vnstat')
+    {
+        $this->binPath = $vnstat_bin_dir ?: '/usr/bin/vnstat';
+        $json = $this->runVnstat(['--json']);
+        $this->processVnstatData($json);
+    }
 
-			// Is the stream valid?
-			if (is_resource($vnstatStream)) {
-				$streamBuffer = '';
+    private function runVnstat(array $args): string
+    {
+        $cmd = escapeshellcmd($this->binPath);
+        foreach ($args as $a) {
+            $cmd .= ' ' . escapeshellarg($a);
+        }
+        // 抑制 stderr；生产中更建议写日志文件
+        $out = @shell_exec($cmd . ' 2>/dev/null');
+        return $out ?: '';
+    }
 
-				while (!feof($vnstatStream)) {
-					$streamBuffer .= fgets($vnstatStream);
-				}
+    private function processVnstatData(string $json): void
+    {
+        $json = trim($json);
+        if ($json === '') {
+            // 没数据也不要抛异常，让前端显示友好提示
+            $this->vnstatData = [];
+            $this->interfaceIds = [];
+            return;
+        }
 
-				// Close the handle
-				pclose($vnstatStream);
+        $data = json_decode($json, true);
+        if (!is_array($data)) {
+            $this->vnstatData = [];
+            $this->interfaceIds = [];
+            return;
+        }
 
-				$this->processVnstatData($streamBuffer);
-			} else {
-
-			}
-
-
-		} else {
-			die();
-		}
-	}
-
-	private function processVnstatData($vnstatJson) {
-		$decodedJson = json_decode($vnstatJson, true);
-
-		// Check the JSON is valid
-		if (json_last_error() != JSON_ERROR_NONE) {
-			throw new Exception('JSON is invalid');
-		}
-
-		$this->vnstatData = $decodedJson;
-		$this->vnstatVersion = $decodedJson['vnstatversion'];
-		$this->vnstatJsonVersion = $decodedJson['jsonversion'];
-	}
-
-	public function getVnstatVersion() {
-		return $this->vnstatVersion;
-	}
-
-	public function getVnstatJsonVersion() {
-		return $this->vnstatJsonVersion;
-	}
-
-	public function getInterfaces() {
-		// Create a placeholder array
-		$vnstatInterfaces = [];
-
-		foreach($this->vnstatData['interfaces'] as $interface) {
-			array_push($vnstatInterfaces, $interface['id']);
-		}
-
-		return $vnstatInterfaces;
-	}
-
-	public function getInterfaceData($timeperiod, $type, $interface) {
-		// If json version equals 1, add an 's' onto the end of each type.
-		// e.g. 'top' becomes 'tops'
-		if ($this->vnstatJsonVersion == 1) {
-			$typeAppend = 's';
-		}
-
-		// Blank placeholder
-		$trafficData = [];
-
-		// Get the array index for the chosen interface
-		$arrayIndex = array_search($interface, array_column($this->vnstatData['interfaces'], 'id'));
- 
-		if ($timeperiod == 'top10') {
-			if ($type == 'table') {
-				foreach ($this->vnstatData['interfaces'][$arrayIndex]['traffic']['top'.$typeAppend] as $traffic) {
-					if (is_array($traffic)) {
-						$i++;
-
-						$trafficData[$i]['label'] = date('d/m/Y', strtotime($traffic['date']['month'] . "/" . $traffic['date']['day'] . "/" . $traffic['date']['year']));;
-						$trafficData[$i]['rx'] = formatSize($traffic['rx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['tx'] = formatSize($traffic['tx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['total'] = formatSize(($traffic['rx'] + $traffic['tx']), $this->vnstatJsonVersion);
-                                                $trafficData[$i]['totalraw'] = ($traffic['rx'] + $traffic['tx']);
-					}
-				}
-			}
-		}
-
-		if ($timeperiod == 'hourly') {
-			if ($type == 'table') {
-				foreach ($this->vnstatData['interfaces'][$arrayIndex]['traffic']['hour'.$typeAppend] as $traffic) {
-					if (is_array($traffic)) {
-						$i++;
-
-                                                if ($this->vnstatJsonVersion == 1) {
-                                                    $hour = $traffic['id'];
-                                                } else {
-                                                    $hour = $traffic['time']['hour'];
-                                                }
-
-						$trafficData[$i]['label'] = date("d/m/Y H:i", mktime($hour, 0, 0, $traffic['date']['month'], $traffic['date']['day'], $traffic['date']['year']));
-                                                $trafficData[$i]['time'] =  mktime($hour, 0, 0, $traffic['date']['month'], $traffic['date']['day'], $traffic['date']['year']);
-						$trafficData[$i]['rx'] = formatSize($traffic['rx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['tx'] = formatSize($traffic['tx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['total'] = formatSize(($traffic['rx'] + $traffic['tx']), $this->vnstatJsonVersion);
-					}
-				}
-
-                                usort($trafficData, sortingFunction);
-
-			} else if ($type == 'graph') {
-				foreach ($this->vnstatData['interfaces'][$arrayIndex]['traffic']['hour'.$typeAppend] as $traffic) {
-					if (is_array($traffic)) {
-						$i++;
-
-                                                if ($this->vnstatJsonVersion == 1) {
-                                                    $hour = $traffic['id'];
-                                                } else {
-                                                    $hour = $traffic['time']['hour'];
-                                                }
-
-						$trafficData[$i]['label'] = sprintf("Date(%d, %d, %d, %d, %d, %d)", $traffic['date']['year'], $traffic['date']['month']-1, $traffic['date']['day'], $hour, 0, 0);
-						$trafficData[$i]['rx'] = kibibytesToBytes($traffic['rx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['tx'] = kibibytesToBytes($traffic['tx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['total'] = kibibytesToBytes(($traffic['rx'] + $traffic['tx']), $this->vnstatJsonVersion);
-					}
-				}
-			}
-		}
-
-		if ($timeperiod == 'daily') {
-			if ($type == 'table') {
-				foreach ($this->vnstatData['interfaces'][$arrayIndex]['traffic']['day'.$typeAppend] as $traffic) {
-					if (is_array($traffic)) {
-						$i++;
-
-						$trafficData[$i]['label'] = date('d/m/Y', mktime(0, 0, 0, $traffic['date']['month'], $traffic['date']['day'], $traffic['date']['year']));
-						$trafficData[$i]['rx'] = formatSize($traffic['rx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['tx'] = formatSize($traffic['tx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['total'] = formatSize(($traffic['rx'] + $traffic['tx']), $this->vnstatJsonVersion);
-					}
-				}
-			} else if ($type == 'graph') {
-				foreach ($this->vnstatData['interfaces'][$arrayIndex]['traffic']['day'.$typeAppend] as $traffic) {
-					if (is_array($traffic)) {
-						$i++;
-
-						$trafficData[$i]['label'] = sprintf("Date(%d, %d, %d, %d, %d, %d)", $traffic['date']['year'], $traffic['date']['month']-1, $traffic['date']['day'], 0, 0, 0);
-						$trafficData[$i]['rx'] = kibibytesToBytes($traffic['rx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['tx'] = kibibytesToBytes($traffic['tx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['total'] = kibibytesToBytes(($traffic['rx'] + $traffic['tx']), $this->vnstatJsonVersion);
-					}
-				}
-			}
-		}
-
-		if ($timeperiod == 'monthly') {
-			if ($type == 'table') {
-				foreach ($this->vnstatData['interfaces'][$arrayIndex]['traffic']['month'.$typeAppend] as $traffic) {
-					if (is_array($traffic)) {
-						$i++;
-
-						$trafficData[$i]['label'] = date('F Y', mktime(0, 0, 0, $traffic['date']['month'], 10, $traffic['date']['year']));
-						$trafficData[$i]['rx'] = formatSize($traffic['rx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['tx'] = formatSize($traffic['tx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['total'] = formatSize(($traffic['rx'] + $traffic['tx']), $this->vnstatJsonVersion);
-					}
-				}
-			} else if ($type == 'graph') {
-				foreach ($this->vnstatData['interfaces'][$arrayIndex]['traffic']['month'.$typeAppend] as $traffic) {
-					if (is_array($traffic)) {
-						$i++;
-
-                                                $trafficData[$i]['label'] = sprintf("Date(%d, %d, %d, %d, %d, %d)", $traffic['date']['year'], $traffic['date']['month'] - 1, 10, 0, 0, 0);
-						$trafficData[$i]['rx'] = kibibytesToBytes($traffic['rx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['tx'] = kibibytesToBytes($traffic['tx'], $this->vnstatJsonVersion);
-						$trafficData[$i]['total'] = kibibytesToBytes(($traffic['rx'] + $traffic['tx']), $this->vnstatJsonVersion);
-					}
-				}
-			}
-		}
-
-                if ($type == 'graph') {
-                    // Get the largest value and then prefix (B, KB, MB, GB, etc)
-                    $trafficLargestValue = getLargestValue($trafficData);
-                    $trafficLargestPrefix = getLargestPrefix($trafficLargestValue);
-
-                    foreach($trafficData as $key => $value) {
-                        $trafficData[$key]['rx'] = formatBytesTo($value['rx'], $trafficLargestPrefix);
-                        $trafficData[$key]['tx'] = formatBytesTo($value['tx'], $trafficLargestPrefix);
-                        $trafficData[$key]['total'] = formatBytesTo($value['total'], $trafficLargestPrefix);
-                        $trafficData[$key]['delimiter'] = $trafficLargestPrefix;
-                    }
+        // 兼容：接口可能没有 id、只有 name
+        if (isset($data['interfaces']) && is_array($data['interfaces'])) {
+            foreach ($data['interfaces'] as &$iface) {
+                if (!isset($iface['id']) && isset($iface['name'])) {
+                    $iface['id'] = $iface['name']; // 兼容 2.x JSON
                 }
+            }
+            unset($iface);
 
-		return $trafficData;
-	}
+            $ids = array_map(function ($if) {
+                return $if['id'] ?? ($if['name'] ?? null);
+            }, $data['interfaces']);
+            $this->interfaceIds = array_values(array_filter($ids, fn($v) => !empty($v)));
+        }
+
+        $this->vnstatData = $data;
+    }
+
+    public function getInterfaces(): array
+    {
+        // 优先使用预设接口（避免老逻辑里基于 id 的自动探测）
+        if (!empty($GLOBALS['use_predefined_interfaces']) &&
+            !empty($GLOBALS['interface_list']) &&
+            is_array($GLOBALS['interface_list'])) {
+            return $GLOBALS['interface_list'];
+        }
+        return $this->interfaceIds ?: [];
+    }
+
+    /**
+     * $period: 'hourly'|'daily'|'monthly'
+     * $format: 'table'|'array'
+     * $iface:  接口名（为空则取列表第一个）
+     */
+    public function getInterfaceData(string $period, string $format = 'table', ?string $iface = null)
+    {
+        $iface = $iface ?: ($this->getInterfaces()[0] ?? null);
+        if ($iface === null) {
+            return $this->formatEmpty($format, 'No interfaces found or vnStat DB is empty.');
+        }
+
+        $ifaceData = $this->findInterface($iface);
+        if ($ifaceData === null) {
+            return $this->formatEmpty($format, "Interface {$iface} not found in vnStat.");
+        }
+
+        $traffic = $ifaceData['traffic'] ?? [];
+        $key = match (strtolower($period)) {
+            'hourly', 'hour', 'h' => 'hour',
+            'daily', 'day', 'd' => 'day',
+            'monthly', 'month', 'm' => 'month',
+            default => 'hour',
+        };
+
+        $rows = $traffic[$key] ?? [];
+        $normalized = [];
+
+        foreach ($rows as $r) {
+            $date = $r['date'] ?? null;
+            $time = $r['time'] ?? null;
+
+            $y = (int)($date['year'] ?? 0);
+            $mo = (int)($date['month'] ?? 0);
+            $d = (int)($date['day'] ?? 0);
+
+            if ($time) {
+                $h = (int)($time['hour'] ?? 0);
+                $mi = (int)($time['minute'] ?? 0);
+                $ts = @mktime($h, $mi, 0, $mo, $d, $y);
+            } else {
+                $ts = @mktime(0, 0, 0, $mo, $d, $y);
+            }
+
+            $rx = (int)($r['rx'] ?? 0);
+            $tx = (int)($r['tx'] ?? 0);
+
+            $normalized[] = [
+                'timestamp' => $ts ?: 0,
+                'label'     => $this->formatLabel($date ?? [], $time ?? []),
+                'rx'        => $rx,
+                'tx'        => $tx,
+                'total'     => $rx + $tx,
+            ];
+        }
+
+        // PHP 8：必须传入 callable，而不是未定义常量
+        usort($normalized, ['vnStat', 'sortingFunction']);
+
+        if ($format === 'array') {
+            return $normalized;
+        }
+        return $this->renderTable($ifaceData, $period, $normalized);
+    }
+
+    /** usort 比较函数：按时间戳升序 */
+    public static function sortingFunction(array $a, array $b): int
+    {
+        return ($a['timestamp'] <=> $b['timestamp']);
+    }
+
+    private function findInterface(string $id): ?array
+    {
+        if (!isset($this->vnstatData['interfaces']) || !is_array($this->vnstatData['interfaces'])) {
+            return null;
+        }
+        foreach ($this->vnstatData['interfaces'] as $iface) {
+            $iid = $iface['id'] ?? ($iface['name'] ?? null);
+            if ($iid === $id) {
+                return $iface;
+            }
+        }
+        return null;
+    }
+
+    private function formatLabel(array $date, array $time): string
+    {
+        $y = (int)($date['year'] ?? 0);
+        $mo = (int)($date['month'] ?? 0);
+        $d = (int)($date['day'] ?? 0);
+
+        if (!empty($time)) {
+            $h = (int)($time['hour'] ?? 0);
+            $mi = (int)($time['minute'] ?? 0);
+            return sprintf('%04d-%02d-%02d %02d:%02d', $y, $mo, $d, $h, $mi);
+        }
+        return sprintf('%04d-%02d-%02d', $y, $mo, $d);
+    }
+
+    private function bytesToHuman(int $bytes): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        $i = 0;
+        $val = (float)$bytes;
+        while ($val >= 1024 && $i < count($units) - 1) {
+            $val /= 1024;
+            $i++;
+        }
+        return sprintf('%.2f %s', $val, $units[$i]);
+    }
+
+    private function renderTable(array $ifaceData, string $period, array $rows): string
+    {
+        $ifaceId = htmlspecialchars($ifaceData['id'] ?? ($ifaceData['name'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $html = '<table class="table table-sm table-striped"><thead><tr>';
+        $html .= '<th>#</th><th>Time</th><th>RX</th><th>TX</th><th>Total</th></tr></thead><tbody>';
+
+        $i = 1;
+        foreach ($rows as $r) {
+            $html .= '<tr>'
+                . '<td>' . ($i++) . '</td>'
+                . '<td>' . htmlspecialchars($r['label'], ENT_QUOTES, 'UTF-8') . '</td>'
+                . '<td>' . $this->bytesToHuman((int)$r['rx']) . '</td>'
+                . '<td>' . $this->bytesToHuman((int)$r['tx']) . '</td>'
+                . '<td>' . $this->bytesToHuman((int)$r['total']) . '</td>'
+                . '</tr>';
+        }
+        if ($i === 1) {
+            $html .= '<tr><td colspan="5"><em>No data yet.</em></td></tr>';
+        }
+        $html .= '</tbody></table>';
+        return $html;
+    }
+
+    private function formatEmpty(string $format, string $msg)
+    {
+        if ($format === 'array') {
+            return [];
+        }
+        return '<div class="alert alert-warning">' . htmlspecialchars($msg, ENT_QUOTES, 'UTF-8') . '</div>';
+    }
 }
-
-?>
