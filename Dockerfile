@@ -1,30 +1,30 @@
-# ---- Composer builder ----
-FROM composer:2 AS vendor
+FROM composer:2 AS build_vendor
 WORKDIR /app
-
-# 先拷贝依赖声明（仓库只有 composer.json 也能过）
-COPY app/composer.* ./
+COPY app/composer.json ./
 RUN composer install --no-dev --prefer-dist --no-progress --no-interaction
-
-# 再拷贝源码并优化自动加载
 COPY app/ ./
-RUN composer dump-autoload --optimize
+RUN composer dump-autoload -o
 
-# ---- Runtime image ----
 FROM php:8.2-apache-bookworm
-
-# 运行时依赖（含 vnstat）
+ENV TZ=Asia/Shanghai
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends vnstat tzdata ca-certificates curl; \
-    rm -rf /var/lib/apt/lists/*
-
-# 可选 Apache 模块
-RUN a2enmod expires headers rewrite
-
-# 拷贝构建产物（含 vendor/）
-COPY --from=vendor /app/ /var/www/html/
-RUN chown -R www-data:www-data /var/www/html
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=5s --retries=5 CMD curl -fsS http://localhost/ || exit 1
+    rm -rf /var/lib/apt/lists/*; \
+    printf 'ServerName localhost\n' > /etc/apache2/conf-available/servername.conf; \
+    a2enconf servername; \
+    a2enmod dir expires headers rewrite; \
+    printf '%s\n' \
+      '<Directory /var/www/html>' \
+      '    Options -Indexes +FollowSymLinks' \
+      '    AllowOverride None' \
+      '    Require all granted' \
+      '    DirectoryIndex index.php index.html' \
+      '</Directory>' \
+      > /etc/apache2/conf-available/vnstat-dashboard.conf; \
+    a2enconf vnstat-dashboard
+COPY --from=build_vendor /app/ /var/www/html/
+RUN mkdir -p /var/www/html/templates_c /var/www/html/cache /var/www/html/configs \
+    && chown -R www-data:www-data /var/www/html
+EXPOSE 80
+CMD ["apache2-foreground"]
