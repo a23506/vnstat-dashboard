@@ -1,0 +1,6 @@
+templates_c
+cache
+configs
+.DS_Store
+.git
+.gitignore
