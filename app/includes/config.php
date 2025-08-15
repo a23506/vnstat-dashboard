@@ -1,38 +1,29 @@
 <?php
+// 生产环境建议关闭屏幕错误（日志另配）
+ini_set('display_errors', 0);
+error_reporting(0);
 
-/*
- * Copyright (C) 2019 Alexander Marston (alexander.marston@gmail.com)
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
+// 时区（按需修改）
+date_default_timezone_set('America/Phoenix');
 
-// Disable error reporting to screen
-/*ini_set('display_errors', 0);
-error_reporting(E_ALL);*/
-
-// Set the default system Timezone
-date_default_timezone_set('Europe/London');
-
-// Path of vnstat
+// vnstat 可执行文件路径（容器内）
 $vnstat_bin_dir = '/usr/bin/vnstat';
 
-// Set to true to set your own interfaces
-$use_predefined_interfaces = false;
+/**
+ * 是否使用预设接口列表：
+ * - true：只显示下面 $interface_list 中的接口（推荐）
+ * - false：尝试从 vnstat JSON 自动探测（老逻辑，可能触发“id”告警）
+ */
+$use_predefined_interfaces = true;
 
-if ($use_predefined_interfaces == true) {
-    $interface_list = ["eth0", "eth1"];
+/**
+ * 接口列表（按需修改；示例：eth0, ens18 等）
+ * 提示：可在宿主机/sidecar 中用 `vnstat --iflist` 或查看 /var/lib/vnstat 下目录名
+ */
+$interface_list = ["eth0"];
 
-    $interface_name['eth0'] = "Internal #1";
-    $interface_name['eth1'] = "Internal #2";
-}
+/**
+ * 可选：接口别名（用于 UI 展示）
+ * 例：$interface_name['eth0'] = "WAN";
+ */
+$interface_name = [];
