@@ -1,110 +1,67 @@
-    <div class="container">
-        <ul class="nav nav-tabs" id="tableTab" role="tablist">
-            <li class="nav-item">
-                <a class="nav-link active" id="hourly-table-tab" data-toggle="tab" href="#hourly-table" role="tab" aria-controls="hourly-table" aria-selected="true">Hourly</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" id="daily-table-tab" data-toggle="tab" href="#daily-table" role="tab" aria-controls="daily-table" aria-selected="false">Daily</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" id="monthly-table-tab" data-toggle="tab" href="#monthly-table" role="tab" aria-controls="monthly-table" aria-selected="false">Monthly</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" id="top10-table-tab" data-toggle="tab" href="#top10-table" role="tab" aria-controls="top10-table" aria-selected="false">Top 10</a>
-            </li>
-        </ul>
+<div class="container mt-4">
+  <ul class="nav nav-tabs" id="tableTab" role="tablist">
+    <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#tab-5min" role="tab">5 分钟</a></li>
+    <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#tab-hour" role="tab">小时</a></li>
+    <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#tab-day" role="tab">天</a></li>
+    <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#tab-month" role="tab">月</a></li>
+    <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#tab-top10" role="tab">前 10</a></li>
+  </ul>
+  <div class="tab-content pt-3">
 
-        <div class="tab-content" id="tableTabContent">
-            <div class="tab-pane fade show active" id="hourly-table" role="tabpanel" aria-labelledby="hourly-table-tab">
-                <table class="table table-bordered">
-                    <thead>
-                        <tr>
-                            <th>Hour</th>
-                            <th>Received</th>
-                            <th>Sent</th>
-                            <th>Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-{foreach from=$hourlyTableData key=key item=value}
-                        <tr>
-                            <td>{$value.label}</td>
-                            <td>{$value.rx}</td>
-                            <td>{$value.tx}</td>
-                            <td>{$value.total}</td>
-                        </tr>
-{/foreach}
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="tab-pane fade" id="daily-table" role="tabpanel" aria-labelledby="daily-table-tab">
-                <table class="table table-bordered">
-                    <thead>
-                        <tr>
-                            <th>Day</th>
-                            <th>Received</th>
-                            <th>Sent</th>
-                            <th>Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-{foreach from=$dailyTableData key=key item=value}
-                        <tr>
-                            <td>{$value.label}</td>
-                            <td>{$value.rx}</td>
-                            <td>{$value.tx}</td>
-                            <td>{$value.total}</td>
-                        </tr>
-{/foreach}
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="tab-pane fade" id="monthly-table" role="tabpanel" aria-labelledby="monthly-table-tab">
-                <table class="table table-bordered">
-                    <thead>
-                        <tr>
-                            <th>Month</th>
-                            <th>Received</th>
-                            <th>Sent</th>
-                            <th>Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-{foreach from=$monthlyTableData key=key item=value}
-                        <tr>
-                            <td>{$value.label}</td>
-                            <td>{$value.rx}</td>
-                            <td>{$value.tx}</td>
-                            <td>{$value.total}</td>
-                        </tr>
-{/foreach}
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="tab-pane fade" id="top10-table" role="tabpanel" aria-labelledby="top10-table-tab">
-                <table class="table table-bordered">
-                    <thead>
-                        <tr>
-                            <th>Day</th>
-                            <th>Received</th>
-                            <th>Sent</th>
-                            <th>Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-{foreach from=$top10TableData key=key item=value}
-                        <tr>
-                            <td>{$value.label}</td>
-                            <td>{$value.rx}</td>
-                            <td>{$value.tx}</td>
-                            <td>{$value.total}</td>
-                        </tr>
-{/foreach}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+    <div class="tab-pane fade show active" id="tab-5min" role="tabpanel">
+      <table class="table table-sm table-striped">
+        <thead><tr><th>时间</th><th>下载</th><th>上传</th><th>总计</th></tr></thead>
+        <tbody>
+        {foreach from=$fiveMinTableData item=value}
+          <tr><td>{$value.label}</td><td>{$value.rx}</td><td>{$value.tx}</td><td>{$value.total}</td></tr>
+        {/foreach}
+        </tbody>
+      </table>
     </div>
+
+    <div class="tab-pane fade" id="tab-hour" role="tabpanel">
+      <table class="table table-sm table-striped">
+        <thead><tr><th>时间戳</th><th>下载</th><th>上传</th><th>总计</th></tr></thead>
+        <tbody>
+        {foreach from=$hourlyTableData item=value}
+          <tr><td>{$value.label}</td><td>{$value.rx}</td><td>{$value.tx}</td><td>{$value.total}</td></tr>
+        {/foreach}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tab-pane fade" id="tab-day" role="tabpanel">
+      <table class="table table-sm table-striped">
+        <thead><tr><th>日期</th><th>下载</th><th>上传</th><th>总计</th></tr></thead>
+        <tbody>
+        {foreach from=$dailyTableData item=value}
+          <tr><td>{$value.label}</td><td>{$value.rx}</td><td>{$value.tx}</td><td>{$value.total}</td></tr>
+        {/foreach}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tab-pane fade" id="tab-month" role="tabpanel">
+      <table class="table table-sm table-striped">
+        <thead><tr><th>月份</th><th>下载</th><th>上传</th><th>总计</th></tr></thead>
+        <tbody>
+        {foreach from=$monthlyTableData item=value}
+          <tr><td>{$value.label}</td><td>{$value.rx}</td><td>{$value.tx}</td><td>{$value.total}</td></tr>
+        {/foreach}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tab-pane fade" id="tab-top10" role="tabpanel">
+      <table class="table table-sm table-striped">
+        <thead><tr><th>日期</th><th>下载</th><th>上传</th><th>总计</th></tr></thead>
+        <tbody>
+        {foreach from=$top10TableData item=value}
+          <tr><td>{$value.label}</td><td>{$value.rx}</td><td>{$value.tx}</td><td>{$value.total}</td></tr>
+        {/foreach}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
