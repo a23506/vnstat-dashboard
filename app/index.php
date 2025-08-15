@@ -1,92 +1,79 @@
 <?php
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+ini_set('error_log', '/proc/self/fd/2');
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
 
-/*
- * Copyright (C) 2019 Alexander Marston (alexander.marston@gmail.com)
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-
-// Require includes
-$autoload = __DIR__ . '/vendor/autoload.php';
-if (file_exists($autoload)) {
-    require $autoload;
-}
-require __DIR__ . '/includes/vnstat.php';
-require __DIR__ . '/includes/utilities.php';
+require __DIR__ . '/vendor/autoload.php';
 require __DIR__ . '/includes/config.php';
+require __DIR__ . '/includes/utilities.php';
+require __DIR__ . '/includes/vnstat.php';
 
-// Initiaite vnStat class
-$vnstat = new vnStat($vnstat_bin_dir);
+$errors = [];
+try {
+    $tplDir   = __DIR__ . '/templates';
+    $compDir  = __DIR__ . '/templates_c';
+    $cacheDir = __DIR__ . '/cache';
+    $confDir  = __DIR__ . '/configs';
+    if (!is_dir($compDir)) @mkdir($compDir, 0775, true);
+    if (!is_dir($cacheDir)) @mkdir($cacheDir, 0775, true);
+    if (!is_dir($confDir))  @mkdir($confDir, 0775, true);
 
-// Initiate Smarty
-$smarty = new Smarty();
+    $smarty = new Smarty();
+    $smarty->setTemplateDir($tplDir);
+    $smarty->setCompileDir($compDir);
+    $smarty->setCacheDir($cacheDir);
+    $smarty->setConfigDir($confDir);
+    $smarty->assign('year', date("Y"));
 
-// Set the current year
-$smarty->assign('year', date("Y"));
+    $vnstat = null;
+    try { $vnstat = new vnStat($vnstat_bin_dir ?? '/usr/bin/vnstat'); }
+    catch (Throwable $e) { $errors[] = 'vnStat init: ' . $e->getMessage(); error_log('[vnstat-dashboard] ' . end($errors)); }
 
-// Set the list of interfaces
-$interface_list = $vnstat->getInterfaces();
-
-// Set the current interface
-$thisInterface = "";
-
-if (isset($_GET['i'])) {
-    $interfaceChosen = rawurldecode($_GET['i']);
-
-    if (in_array($interfaceChosen, $interface_list, true)) {
-        $thisInterface = $interfaceChosen;
-    } else {
-        $thisInterface = reset($interface_list);
+    $interface_list = [];
+    if ($vnstat) {
+        try { $interface_list = $vnstat->getInterfaces(); }
+        catch (Throwable $e) { $errors[] = 'getInterfaces: ' . $e->getMessage(); error_log('[vnstat-dashboard] ' . end($errors)); }
     }
-} else {
-    // Assume they mean the first interface
-    $thisInterface = reset($interface_list);
+    if (empty($interface_list)) { $interface_list = ['eth0']; }
+    $queryIface = $_GET['i'] ?? ($_GET['iface'] ?? null);
+    $thisInterface = $queryIface && in_array($queryIface, $interface_list, true) ? $queryIface : $interface_list[0];
+    $smarty->assign('current_interface', $thisInterface);
+    $smarty->assign('interface_list', $interface_list);
+
+    $safeGet = function($period, $type) use ($vnstat, $thisInterface, &$errors) {
+        try { if ($vnstat) return $vnstat->getInterfaceData($period, $type, $thisInterface); }
+        catch (Throwable $e) { $errors[] = $period . '/' . $type . ': ' . $e->getMessage(); error_log('[vnstat-dashboard] ' . end($errors)); }
+        return [];
+    };
+
+    // 表格数据
+    $smarty->assign('fiveMinTableData', $safeGet('fiveminute', 'table'));
+    $smarty->assign('hourlyTableData',  $safeGet('hourly',  'table'));
+    $smarty->assign('dailyTableData',   $safeGet('daily',   'table'));
+    $smarty->assign('monthlyTableData', $safeGet('monthly', 'table'));
+    $smarty->assign('top10TableData',   $safeGet('top10',   'table'));
+
+    // 图表数据
+    $fg = $safeGet('fiveminute', 'graph');
+    $hg = $safeGet('hourly',     'graph');
+    $dg = $safeGet('daily',      'graph');
+    $mg = $safeGet('monthly',    'graph');
+    $smarty->assign('fiveMinGraphData', $fg);   $smarty->assign('fiveMinLargestPrefix',  $fg[1]['delimiter'] ?? 'MB');
+    $smarty->assign('hourlyGraphData',  $hg);   $smarty->assign('hourlyLargestPrefix',   $hg[1]['delimiter'] ?? 'MB');
+    $smarty->assign('dailyGraphData',   $dg);   $smarty->assign('dailyLargestPrefix',    $dg[1]['delimiter'] ?? 'MB');
+    $smarty->assign('monthlyGraphData', $mg);   $smarty->assign('monthlyLargestPrefix',  $mg[1]['delimiter'] ?? 'MB');
+
+    $smarty->display('site_index.tpl');
+    if (!empty($errors)) {
+        echo "\n<!-- vnstat-dashboard errors:\n" . implode("\n", $errors) . "\n-->\n";
+    }
+} catch (Throwable $e) {
+    http_response_code(200);
+    $msg = '[vnstat-dashboard] FATAL index: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine();
+    error_log($msg);
+    echo '<!doctype html><meta charset="utf-8"><title>vnStat Dashboard</title>';
+    echo '<pre>仪表盘临时错误，请查看 docker logs 获取详情。</pre>';
+    echo "\n<!-- $msg -->\n";
+    exit;
 }
-
-
-$smarty->assign('current_interface', $thisInterface);
-
-// Assign interface options
-$smarty->assign('interface_list', $vnstat->getInterfaces());
-
-// Populate table data
-$hourlyData = $vnstat->getInterfaceData('hourly', 'table', $thisInterface);
-$smarty->assign('hourlyTableData', $hourlyData);
-
-$dailyData = $vnstat->getInterfaceData('daily', 'table', $thisInterface);
-$smarty->assign('dailyTableData', $dailyData);
-
-$monthlyData = $vnstat->getInterfaceData('monthly', 'table', $thisInterface);
-$smarty->assign('monthlyTableData', $monthlyData);
-
-$top10Data = $vnstat->getInterfaceData('top10', 'table', $thisInterface);
-$smarty->assign('top10TableData', $top10Data);
-
-// Populate graph data
-$hourlyGraphData = $vnstat->getInterfaceData('hourly', 'graph', $thisInterface);
-$smarty->assign('hourlyGraphData', $hourlyGraphData);
-$smarty->assign('hourlyLargestPrefix', $hourlyGraphData[1]['delimiter']);
-
-$dailyGraphData = $vnstat->getInterfaceData('daily', 'graph', $thisInterface);
-$smarty->assign('dailyGraphData', $dailyGraphData);
-$smarty->assign('dailyLargestPrefix', $dailyGraphData[1]['delimiter']);
-
-$monthlyGraphData = $vnstat->getInterfaceData('monthly', 'graph', $thisInterface);
-$smarty->assign('monthlyGraphData', $monthlyGraphData);
-$smarty->assign('monthlyLargestPrefix', $monthlyGraphData[1]['delimiter']);
-
-// Display the page
-$smarty->display('templates/site_index.tpl');
-
-?>
